@@ -99,20 +99,64 @@ function normalize(rc) {
   };
 }
 
-/** FireAPI dates come like "01/03/2025 00:00:00" (DD/MM/YYYY). */
+/**
+ * Parse FireAPI date strings into ISO YYYY-MM-DD or null.
+ * Known formats:
+ *   "01/03/2025 00:00:00"  (DD/MM/YYYY)
+ *   "12/29/2027 00:00:00"  (MM/DD/YYYY — month > 12 disambiguates)
+ *   "03-Jan-2040"          (DD-Mon-YYYY)
+ *   "26-Apr-2026"          (DD-Mon-YYYY)
+ *   "2025-03-01"           (ISO)
+ *   2025                   (just a year, e.g. rc_manu_month_yr)
+ */
 function parseFireApiDate(str) {
   if (!str) return null;
-  // Already ISO?
-  const iso = new Date(str);
-  if (!isNaN(iso.getTime()) && /\d{4}-\d{2}-\d{2}/.test(str)) return str;
+  const s = String(str).trim();
+  if (!s) return null;
 
-  // DD/MM/YYYY [HH:MM:SS]
-  const m = String(str).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-  if (m) {
-    const [, dd, mm, yyyy] = m;
-    return `${yyyy}-${mm}-${dd}`;
+  // Already ISO YYYY-MM-DD?
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : s.slice(0, 10);
   }
-  return str;
+
+  // DD/MM/YYYY or MM/DD/YYYY (with optional time)
+  const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (slashMatch) {
+    let [, a, b, yyyy] = slashMatch;
+    a = parseInt(a, 10);
+    b = parseInt(b, 10);
+    let dd, mm;
+    if (a > 12) {
+      // a must be day (DD/MM/YYYY)
+      dd = a; mm = b;
+    } else if (b > 12) {
+      // b must be day (MM/DD/YYYY)
+      mm = a; dd = b;
+    } else {
+      // Ambiguous — assume DD/MM/YYYY (Indian convention)
+      dd = a; mm = b;
+    }
+    return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  }
+
+  // DD-Mon-YYYY (e.g. "03-Jan-2040")
+  const monMatch = s.match(/^(\d{1,2})-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{4})/i);
+  if (monMatch) {
+    const months = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+                     jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
+    const dd = String(monMatch[1]).padStart(2, '0');
+    const mm = months[monMatch[2].toLowerCase()];
+    return `${monMatch[3]}-${mm}-${dd}`;
+  }
+
+  // Last resort: try native Date parsing
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().split('T')[0];
+  }
+
+  return null; // give up — don't pass garbage to Mongoose
 }
 
 function decideAuthorization(rtoResult) {

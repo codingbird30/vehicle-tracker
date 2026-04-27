@@ -76,25 +76,32 @@ async function processKnownPlate(plateNumber, opts = {}) {
   // RTO lookup
   const rtoResult = await rtoService.fetchRTODetails(plateNumber);
   const decision = rtoService.decideAuthorization(rtoResult);
+  const d = rtoResult.data || {};
 
-  // Don't write to DB on API errors — the entry would be misleading and clutter
-  // the event log with rows we have no actual info about.
-  if (decision.reason === 'api_error') {
-    return {
-      apiError: true,
-      plateNumber,
-      decision,
-      rtoResult,
-    };
+  // For API errors, override the reason with a descriptive note
+  const reason = decision.reason === 'api_error'
+    ? `Number plate does not exist: RTO api ${rtoResult.error || 'unknown error'}`
+    : decision.reason;
+
+  // Build registrationDate safely — never pass an invalid date to Mongoose
+  let regDate = null;
+  if (d.registrationDate) {
+    const parsed = new Date(d.registrationDate);
+    if (!isNaN(parsed.getTime())) regDate = parsed;
   }
 
-  const d = rtoResult.data || {};
+  // Build insuranceUpto safely
+  let insUpto = null;
+  if (d.insuranceUpto) {
+    const parsed = new Date(d.insuranceUpto);
+    if (!isNaN(parsed.getTime())) insUpto = parsed;
+  }
 
   // Save to DB
   const vehicle = new Vehicle({
     plateNumber,
     isAuthorized: decision.isAuthorized,
-    reason: decision.reason,
+    reason,
     ownerName: d.ownerName,
     fatherName: d.fatherName,
     permanentAddress: d.permanentAddress,
@@ -108,14 +115,14 @@ async function processKnownPlate(plateNumber, opts = {}) {
     chassisNumber: d.chassisNumber,
     engineNumber: d.engineNumber,
     manufactureYear: d.manufactureYear,
-    registrationDate: d.registrationDate ? new Date(d.registrationDate) : null,
+    registrationDate: regDate,
     fitnessUpto: d.fitnessUpto,
     rtoLocation: d.rtoLocation,
     rtoCode: d.rtoCode,
     stateCode: d.stateCode,
     insuranceCompany: d.insuranceCompany,
     insurancePolicyNumber: d.insurancePolicyNumber,
-    insuranceUpto: d.insuranceUpto,
+    insuranceUpto: insUpto,
     rawApiResponse: rtoResult.raw,
     capturedImagePath: imagePathInUploads,
     ocrSource,
@@ -167,15 +174,6 @@ async function runPipeline(imageBuffer, imagePathInUploads) {
     ocrSource: ocrResult.source,
     ocrConfidence: ocrResult.confidence,
   });
-
-  if (result.apiError) {
-    return {
-      success: false,
-      stage: 'rto',
-      message: `RTO API error for ${ocrResult.plateNumber} — not logged`,
-      ocr: ocrResult,
-    };
-  }
 
   return { success: true, vehicle: result.vehicle, ocr: ocrResult, decision: result.decision };
 }
@@ -321,13 +319,6 @@ app.post('/api/check-plate', async (req, res) => {
       ocrSource: 'manual',
       ocrConfidence: 100,
     });
-    if (result.apiError) {
-      return res.json({
-        success: false,
-        stage: 'rto',
-        message: `RTO API error for ${raw} — not logged`,
-      });
-    }
     res.json({ success: true, vehicle: result.vehicle, decision: result.decision });
   } catch (err) {
     console.error('[/api/check-plate]', err);

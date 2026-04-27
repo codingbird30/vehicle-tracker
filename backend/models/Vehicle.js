@@ -32,7 +32,7 @@ const vehicleSchema = new mongoose.Schema(
     // Insurance
     insuranceCompany: { type: String, default: null },
     insurancePolicyNumber: { type: String, default: null },
-    insuranceUpto: { type: String, default: null },
+    insuranceUpto: { type: Date, default: null },
 
     // Auth metadata
     reason: { type: String, default: null },

@@ -93,7 +93,7 @@ async function loadHistory() {
           <td class="log-time">${date}<br/>${time}</td>
           <td>${thumb}</td>
           <td><span class="log-plate">${escapeHtml(v.plateNumber)}</span></td>
-          <td><span class="log-status ${v.isAuthorized ? 'ok' : 'bad'}">${v.isAuthorized ? 'Authorized' : 'Denied'}</span></td>
+          <td><span class="log-status ${v.isAuthorized ? 'ok' : 'bad'}">${v.isAuthorized ? 'Authorized' : 'Not Authorized'}</span></td>
           <td>${escapeHtml(v.ownerName || '—')}</td>
           <td>${escapeHtml(veh)}</td>
           <td>${reg}</td>
@@ -373,7 +373,7 @@ async function checkPlate() {
     renderResult(result, { attemptedPlate: raw });
     await Promise.all([loadStats(), loadHistory()]);
     if (result.success) {
-      $('#footStatus').textContent = `manual · ${result.vehicle.plateNumber} · ${result.vehicle.isAuthorized ? 'authorized' : 'denied'}`;
+      $('#footStatus').textContent = `manual · ${result.vehicle.plateNumber} · ${result.vehicle.isAuthorized ? 'authorized' : 'Not Authorized'}`;
       input.value = '';
     } else {
       $('#footStatus').textContent = `failed · ${result.message || result.error}`;
@@ -447,7 +447,7 @@ async function autoScanTick() {
     // Detected!
     renderResult(result);
     await Promise.all([loadStats(), loadHistory()]);
-    $('#footStatus').textContent = `auto · ${result.vehicle.plateNumber} · ${result.vehicle.isAuthorized ? 'authorized' : 'denied'}`;
+    $('#footStatus').textContent = `auto · ${result.vehicle.plateNumber} · ${result.vehicle.isAuthorized ? 'authorized' : 'Not Authorized'}`;
   } catch (e) {
     consecutiveFailures++;
     $('#footStatus').textContent = `auto-scan error · ${e.message}`;

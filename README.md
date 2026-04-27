@@ -33,7 +33,7 @@ Three processes run together:
 - **Manual plate input** — type a plate number directly to look it up without the camera.
 - **ESP32-CAM alert LED** — onboard flash LED blinks when an unauthorized vehicle is detected.
 - **Dark / light theme toggle.**
-- **API errors are not logged to the event log** — only successful lookups (whether authorized or denied) get DB records.
+- **API errors are not logged to the event log** — only successful lookups (whether authorized or not authorized) get DB records.
 
 ## Quick start
 
@@ -70,8 +70,8 @@ npm run start:node     # in another
 | No text in frame | Silent skip, no green boxes |
 | Text detected but not a valid plate | Green boxes drawn, footer shows "N text region(s) — no plate" |
 | Valid plate, RTO returns data, ≤15 yrs old | ✅ Authorized, saved to DB, ESP32 LED stays off |
-| Valid plate, RTO returns data, >15 yrs old | ❌ Denied (`expired`), saved to DB, ESP32 LED blinks |
-| Valid plate, RTO returns "not found" | ❌ Denied (`not_found`), saved to DB, ESP32 LED blinks |
+| Valid plate, RTO returns data, >15 yrs old | ❌ not authorized (`expired`), saved to DB, ESP32 LED blinks |
+| Valid plate, RTO returns "not found" | ❌ not authorized (`not_found`), saved to DB, ESP32 LED blinks |
 | Valid plate, RTO API errors out (network, 500) | **Not saved to DB.** Footer shows error. |
 | Same plate scanned within 30 seconds | Skipped (dedup window) |
 
