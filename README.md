@@ -1,93 +1,112 @@
-# SENTINEL — Real-time Vehicle Access Control
+# Vehicle Entry Tracker
 
-ESP32-CAM based number-plate tracker with RTO verification, MongoDB storage, and a live monitoring dashboard.
+Real-time license plate recognition with RTO verification, automatic continuous scanning, MongoDB storage, and a live dashboard.
 
-## What it does
+## Architecture
+
+Three processes run together:
 
 ```
-┌────────────┐   stream/capture    ┌────────────┐   OCR   ┌────────────┐
-│ ESP32-CAM  │ ──────────────────▶ │  Node.js   │ ──────▶ │ Tesseract  │
-│ + flash    │                     │  Express   │         └────────────┘
-│ LED alert  │ ◀── /alert or /ok ─ │            │ ──RTO─▶ Placeholder API
-└────────────┘                     │            │ ──────▶ MongoDB
-                                   └─────┬──────┘
-                                         │ stats / history
-                                         ▼
-                                   ┌────────────┐
-                                   │  Browser   │
-                                   │ Dashboard  │
-                                   └────────────┘
+┌─────────────────┐    HTTP     ┌──────────────┐    HTTP     ┌────────────────┐
+│ Browser         │◀──────────▶│  Node.js     │◀──────────▶│ Python sidecar │
+│ dashboard       │             │  Express     │             │ PaddleOCR      │
+│ http://:3000    │             │  http://:3000│             │ http://:5001   │
+└─────────────────┘             └───────┬──────┘             └────────────────┘
+                                        │
+                                  ┌─────┴──────┐         ┌──────────────┐
+                                  │  MongoDB   │         │  ESP32-CAM   │
+                                  └────────────┘         └──────────────┘
 ```
 
-**Indicator behavior:**
-- ✅ **Authorized** vehicle → LED stays off (silence = OK)
-- ❌ **Unauthorized** vehicle → onboard flash LED **blinks rapidly** for ~3 seconds
+- **Node.js (port 3000)** — Express server, dashboard, MongoDB writes, RTO API, ESP32 control
+- **Python (port 5001)** — PaddleOCR plate detection sidecar (called by Node)
+- **MongoDB** — record storage
+- **ESP32-CAM** — camera feed + alert LED
 
-**Authorization rule:** A vehicle is authorized only if the RTO API returns valid data **and** the registration is within the last **15 years**. Otherwise it's saved with `isAuthorized: false` plus a reason (`expired`, `not_found`, `api_error`, etc.).
+## Features
 
----
+- **Continuous auto-scan** — every 1.5 seconds the system pulls a snapshot from the ESP32-CAM, runs PaddleOCR on it, and draws green bounding boxes over any detected text in the live feed.
+- **PaddleOCR** — significantly more accurate than Tesseract on real-world Indian plates, handles modest blur, low light, and angle.
+- **FireAPI RTO integration** — looks up owner, vehicle, registration, and insurance details.
+- **Bounding box overlay** — green boxes show every detected text region; thicker green box highlights the actual matched plate.
+- **Snapshot storage** — every successful scan saves the image. Click any thumbnail to view full size.
+- **Manual plate input** — type a plate number directly to look it up without the camera.
+- **ESP32-CAM alert LED** — onboard flash LED blinks when an unauthorized vehicle is detected.
+- **Dark / light theme toggle.**
+- **API errors are not logged to the event log** — only successful lookups (whether authorized or denied) get DB records.
 
 ## Quick start
 
 ```bash
-# 1. install backend
-npm install
+# 1. one-time setup (installs Node deps + creates Python venv + installs PaddleOCR)
+npm run setup
 
 # 2. configure
 cp .env.example .env
-# edit .env: set MONGO_URI and ESP32_CAM_IP
+# edit .env with your MONGO_URI, RTO_API_KEY, ESP32_CAM_IP
 
-# 3. flash the ESP32-CAM
-#    use sentinel_cam.ino from esp32/ folder ALONGSIDE your existing
-#    app_httpd.cpp + board_config.h + camera_index.h
-#    full instructions in docs/ESP32_SETUP.md
+# 3. flash the ESP32-CAM (one-time)
+#    see docs/ESP32_SETUP.md
 
-# 4. run server
+# 4. start everything (Node + Python sidecar in one terminal)
 npm start
 
-# 5. open the dashboard
-#    -> http://localhost:3000   (NOT file://...index.html)
+# 5. open http://localhost:3000
 ```
 
----
+That's it. `npm start` boots both the Node backend and the Python OCR sidecar with prefixed log output (yellow for Node, cyan for OCR). If either crashes, both shut down so you don't end up with orphan processes.
 
-## Project structure
+If you want to run them separately for debugging:
 
-```
-vehicle-tracker/
-├── backend/
-│   ├── server.js              ← Express server, routes, full pipeline
-│   ├── models/Vehicle.js      ← Mongoose schema
-│   └── services/
-│       ├── ocrService.js      ← Tesseract.js + sharp preprocessing
-│       ├── rtoService.js      ← RTO API + auth decision (mock mode default)
-│       └── esp32Service.js    ← talks to ESP32-CAM (capture + alert)
-├── public/
-│   ├── index.html             ← dashboard
-│   ├── styles.css             ← industrial terminal aesthetic
-│   └── app.js                 ← frontend logic
-├── esp32/
-│   └── sentinel_cam.ino       ← Arduino .ino (drops into existing sketch folder)
-├── docs/
-│   └── ESP32_SETUP.md         ← full hardware + flashing guide
-├── .env.example
-├── package.json
-└── README.md
+```bash
+npm run start:python   # in one terminal
+npm run start:node     # in another
 ```
 
----
+## How it handles different scan outcomes
+
+| Situation | What happens |
+|---|---|
+| No text in frame | Silent skip, no green boxes |
+| Text detected but not a valid plate | Green boxes drawn, footer shows "N text region(s) — no plate" |
+| Valid plate, RTO returns data, ≤15 yrs old | ✅ Authorized, saved to DB, ESP32 LED stays off |
+| Valid plate, RTO returns data, >15 yrs old | ❌ Denied (`expired`), saved to DB, ESP32 LED blinks |
+| Valid plate, RTO returns "not found" | ❌ Denied (`not_found`), saved to DB, ESP32 LED blinks |
+| Valid plate, RTO API errors out (network, 500) | **Not saved to DB.** Footer shows error. |
+| Same plate scanned within 30 seconds | Skipped (dedup window) |
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/trigger-scan` | server pulls fresh snapshot from ESP32 → full pipeline |
-| POST | `/api/scan` | upload an image manually (multipart `image`) |
-| GET  | `/api/vehicles?limit=N` | recent records |
-| GET  | `/api/stats` | total / authorized / unauthorized counts |
-| POST | `/api/alert` `{state}` | manual alert control: `'alert'` or `'ok'` |
-| GET  | `/api/config` | returns ESP32 stream/capture URLs for the frontend |
+| POST | `/api/auto-scan` | Auto-scan tick — runs OCR, only does RTO + DB if plate matches |
+| POST | `/api/trigger-scan` | Manual: pull snapshot from ESP32 → full pipeline |
+| POST | `/api/scan` | Upload image manually (multipart `image`) |
+| POST | `/api/check-plate` | Manual: lookup by plate string, no image needed |
+| GET  | `/api/vehicles?limit=N` | Recent records |
+| GET  | `/api/stats` | Counts (last 30 days) |
+| POST | `/api/alert` `{state}` | Manual alert: `'alert'` or `'ok'` |
+| GET  | `/api/config` | Camera + OCR config for the frontend |
 
----
+## Project structure
 
-See **`docs/ESP32_SETUP.md`** for hardware setup, flashing, alert behavior tweaks, and troubleshooting.
+```
+vehicle-tracker/
+├── backend/                    Node.js / Express
+│   ├── server.js
+│   ├── models/Vehicle.js
+│   └── services/
+│       ├── ocrService.js       (calls Python sidecar)
+│       ├── rtoService.js       (FireAPI)
+│       └── esp32Service.js
+├── python-ocr/                 PaddleOCR sidecar
+│   ├── app.py
+│   ├── requirements.txt
+│   └── README.md
+├── public/                     Frontend (HTML/CSS/JS)
+├── esp32/sentinel_cam.ino
+├── docs/ESP32_SETUP.md
+├── uploads/                    Snapshots saved here at runtime
+├── .env.example
+└── package.json
+```
