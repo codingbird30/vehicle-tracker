@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SENTINEL // Vehicle Access Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Major+Mono+Display&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="grain"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">▼</span>
+      <h1>SENTINEL</h1>
+      <span class="brand-sub">// vehicle access control · v1.0</span>
+    </div>
+    <div class="status-cluster">
+      <div class="status-pill" id="dbStatus">
+        <span class="dot"></span> DB
+      </div>
+      <div class="status-pill" id="camStatus">
+        <span class="dot"></span> CAM
+      </div>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- LEFT: Live feed + controls -->
+    <section class="panel feed-panel">
+      <div class="panel-head">
+        <span class="panel-tag">01</span>
+        <h2>LIVE FEED</h2>
+        <span class="panel-meta" id="feedMeta">— offline —</span>
+      </div>
+
+      <div class="feed-frame">
+        <img id="liveFeed" alt="ESP32-CAM live feed" />
+        <div class="feed-placeholder" id="feedPlaceholder">
+          <div class="ascii-eye">
+            ┌─────────────┐<br />
+            │   NO SIGNAL │<br />
+            │   ░░░░░░░░░ │<br />
+            └─────────────┘
+          </div>
+          <p>Configure <code>ESP32_CAM_IP</code> in <code>.env</code>, restart server.</p>
+        </div>
+        <div class="reticle"></div>
+      </div>
+
+      <div class="controls">
+        <button id="btnTriggerScan" class="btn btn-primary">
+          ▶ TRIGGER SCAN
+        </button>
+        <button id="btnUploadScan" class="btn btn-ghost">
+          ⇪ UPLOAD IMAGE
+        </button>
+        <input type="file" id="fileInput" accept="image/*" hidden />
+        <div class="led-controls">
+          <span class="led-label">ALERT·TEST</span>
+          <button class="alert-btn alert-btn-trigger" data-state="alert" title="Trigger blink alert">⚠ ALERT</button>
+          <button class="alert-btn alert-btn-clear" data-state="ok" title="Clear alert">✓ CLEAR</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT TOP: Latest scan result -->
+    <section class="panel result-panel" id="resultPanel">
+      <div class="panel-head">
+        <span class="panel-tag">02</span>
+        <h2>LAST SCAN</h2>
+        <span class="panel-meta" id="resultMeta">awaiting input</span>
+      </div>
+      <div class="result-body" id="resultBody">
+        <div class="empty-state">
+          <div class="big-glyph">◌</div>
+          <p>No scan yet. Trigger one to begin.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT BOTTOM: Stats -->
+    <section class="panel stats-panel">
+      <div class="panel-head">
+        <span class="panel-tag">03</span>
+        <h2>STATS</h2>
+      </div>
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-num" id="statTotal">0</div>
+          <div class="stat-label">total</div>
+        </div>
+        <div class="stat stat-ok">
+          <div class="stat-num" id="statAuth">0</div>
+          <div class="stat-label">authorized</div>
+        </div>
+        <div class="stat stat-bad">
+          <div class="stat-num" id="statUnauth">0</div>
+          <div class="stat-label">unauthorized</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOTTOM: History log -->
+    <section class="panel history-panel">
+      <div class="panel-head">
+        <span class="panel-tag">04</span>
+        <h2>EVENT LOG</h2>
+        <button class="refresh-btn" id="btnRefresh">↻ REFRESH</button>
+      </div>
+      <div class="table-wrap">
+        <table class="log-table" id="logTable">
+          <thead>
+            <tr>
+              <th>TIME</th>
+              <th>PLATE</th>
+              <th>STATUS</th>
+              <th>OWNER</th>
+              <th>VEHICLE</th>
+              <th>REG. DATE</th>
+              <th>NOTE</th>
+            </tr>
+          </thead>
+          <tbody id="logBody">
+            <tr><td colspan="7" class="log-empty">— no records —</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footbar">
+    <span>esp32-cam · tesseract.js · mongodb</span>
+    <span id="footStatus">ready</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
